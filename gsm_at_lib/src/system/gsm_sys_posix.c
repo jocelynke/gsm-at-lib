@@ -31,6 +31,10 @@
  */
 #include "system/gsm_sys.h"
 #include <math.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 
 static gsm_sys_mutex_t sys_mutex;
 #define NSEC_PER_SEC 1000000000
@@ -191,8 +195,8 @@ gsm_sys_mutex_create(gsm_sys_mutex_t* p) {
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     ret = pthread_mutex_init(&p->mutex, &attr);
-    p->is_valid = ret;
-    return ret == 0;
+    p->is_valid = (ret == 0);
+    return p->is_valid;
 }
 
 /**
@@ -202,13 +206,12 @@ gsm_sys_mutex_create(gsm_sys_mutex_t* p) {
  */
 uint8_t
 gsm_sys_mutex_delete(gsm_sys_mutex_t* p) {
-    int ret ;
-    if(! p->is_valid) {
+    int ret;
+    if(!p->is_valid)
         return 0;
-    }
 
     ret = pthread_mutex_destroy(&p->mutex);
-    p->is_valid = false;
+    p->is_valid = 0;
     return ret == 0;
 }
 
@@ -219,9 +222,9 @@ gsm_sys_mutex_delete(gsm_sys_mutex_t* p) {
  */
 uint8_t
 gsm_sys_mutex_lock(gsm_sys_mutex_t* p) {
-    if(! p->is_valid) {
+    if(!p->is_valid)
         return 0;
-    }
+
     return pthread_mutex_lock(&p->mutex) == 0;
 }
 
@@ -232,9 +235,9 @@ gsm_sys_mutex_lock(gsm_sys_mutex_t* p) {
  */
 uint8_t
 gsm_sys_mutex_unlock(gsm_sys_mutex_t* p) {
-    if(! p->is_valid) {
+    if(! p->is_valid)
         return 0;
-    }
+
     return pthread_mutex_unlock(&p->mutex) == 0;
 }
 
@@ -255,7 +258,7 @@ gsm_sys_mutex_isvalid(gsm_sys_mutex_t* p) {
  */
 uint8_t
 gsm_sys_mutex_invalid(gsm_sys_mutex_t* p) {
-    p->is_valid = false;
+    p->is_valid = 0;
     return 1;
 }
 
@@ -271,12 +274,9 @@ gsm_sys_mutex_invalid(gsm_sys_mutex_t* p) {
 uint8_t
 gsm_sys_sem_create(gsm_sys_sem_t* p, uint8_t cnt) {
     int shared_between_processes = 0;
-    int result = sem_init(p, shared_between_processes, cnt);
-    if(result == 0)
-        p->is_valid = true;
-    else
-        p->valid = false;
-    return result == 0;
+    int result = sem_init(&p->sem, shared_between_processes, cnt);
+    p->is_valid = result == 0;
+    return p->is_valid;
 }
 
 /**
@@ -286,10 +286,10 @@ gsm_sys_sem_create(gsm_sys_sem_t* p, uint8_t cnt) {
  */
 uint8_t
 gsm_sys_sem_delete(gsm_sys_sem_t* p) {
-    if(! p->is_valid)
-        ret 0;
-    int result = sem_destroy(p);
-    p->is_valid = false;
+    if(!p->is_valid)
+        return 0;
+    int result = sem_destroy(&p->sem);
+    p->is_valid = 0;
     return result == 0;
 }
 
@@ -303,7 +303,7 @@ gsm_sys_sem_delete(gsm_sys_sem_t* p) {
 uint32_t
 gsm_sys_sem_wait(gsm_sys_sem_t* p, uint32_t timeout) {
     if(timeout == 0) {  //if no timeout
-        return sem_wait(p);
+        return sem_wait(&p->sem);
     }
 
     //we have a timeout
@@ -311,7 +311,7 @@ gsm_sys_sem_wait(gsm_sys_sem_t* p, uint32_t timeout) {
     clock_gettime(CLOCK_MONOTONIC, &before_call);   //get time before call
     timespec_add_msec(&deadline, &before_call, timeout);    //compute deadline
 
-    if( sem_timedwait(p, &deadline) != 0) {   //wait on semaphore
+    if( sem_timedwait(&p->sem, &deadline) != 0) {   //wait on semaphore
         return GSM_SYS_TIMEOUT; //if timeout
     }
     clock_gettime(CLOCK_MONOTONIC, &after_call);    //get time after call
@@ -326,7 +326,9 @@ gsm_sys_sem_wait(gsm_sys_sem_t* p, uint32_t timeout) {
  */
 uint8_t
 gsm_sys_sem_release(gsm_sys_sem_t* p) {
-    return sem_close(p) == 0 ? 1 : 0;
+    int ret = sem_close(&p->sem);
+    p->is_valid = 0;
+    return ret == 0;
 }
 
 /**
@@ -336,7 +338,7 @@ gsm_sys_sem_release(gsm_sys_sem_t* p) {
  */
 uint8_t
 gsm_sys_sem_isvalid(gsm_sys_sem_t* p) {
-    return p != NULL;
+    return p != NULL && p->is_valid;
 }
 
 /**
@@ -346,6 +348,7 @@ gsm_sys_sem_isvalid(gsm_sys_sem_t* p) {
  */
 uint8_t
 gsm_sys_sem_invalid(gsm_sys_sem_t* p) {
+    p->is_valid = 0;
     return 1;
 }
 
@@ -357,21 +360,20 @@ gsm_sys_sem_invalid(gsm_sys_sem_t* p) {
  */
 uint8_t
 gsm_sys_mbox_create(gsm_sys_mbox_t* b, size_t size) {
-    static unsigned int suffix = 0;
+    static uint32_t suffix = 0;
     pid_t pid;
-    char mq_name[56];
 
     //build message queue name
     pid = getpid();
-    sprintf(mq_name, "/%ld_%u", pid, suffix );
+    snprintf(b->name, sizeof(b->name), "/%ld_%u", (long int)pid, suffix );
     ++suffix;   //can loop
 
     //create it
     struct mq_attr mqattr;
     mqattr.mq_maxmsg = size;
     mqattr.mq_msgsize = sizeof(void*);
-    *b = mq_open(mq_name, O_RDWR | O_CREAT | O_EXCL, S_IRWXU, &mqattr);
-    return *b != -1;
+    b->mq = mq_open(b->name, O_RDWR | O_CREAT | O_EXCL, S_IRWXU, &mqattr);
+    return b->mq != -1;
 }
 
 /**
@@ -381,12 +383,10 @@ gsm_sys_mbox_create(gsm_sys_mbox_t* b, size_t size) {
  */
 uint8_t
 gsm_sys_mbox_delete(gsm_sys_mbox_t* b) {
-    if(mq_close(*b) == -1) {
+    if(mq_close(b->mq) == -1)
         return 0;
-    }
-    if(mq_unlink(*b) == -1) {
+    if(mq_unlink(b->name) == -1)
         return 0;
-    }
     return 1;
 }
 
@@ -401,9 +401,8 @@ gsm_sys_mbox_put(gsm_sys_mbox_t* b, void* m) {
     struct timespec before_call, after_call, elapsed;
     clock_gettime(CLOCK_MONOTONIC, &before_call);   //get time before call
 
-    if( mq_send(*b, m, sizeof(m), 0) == -1){ 
+    if( mq_send(b->mq, m, sizeof(m), 0) == -1)
         return GSM_SYS_TIMEOUT;
-    }
 
     clock_gettime(CLOCK_MONOTONIC, &after_call);    //get time after call
     timespec_sub(&elapsed, &after_call, &before_call);
@@ -420,17 +419,17 @@ gsm_sys_mbox_put(gsm_sys_mbox_t* b, void* m) {
  */
 uint32_t
 gsm_sys_mbox_get(gsm_sys_mbox_t* b, void** m, uint32_t timeout) {
-    struct timespec before_call, after_call, elapsed;
+    struct timespec before_call, deadline, after_call, elapsed;
     ssize_t received_size;
     unsigned int received_prio;
     clock_gettime(CLOCK_MONOTONIC, &before_call);   //get time before call
 
     if(timeout == 0) {  //if no timeout
-        received_size = mq_receive(*b, m, sizeof(void*), &received_prio);
+        received_size = mq_receive(b->mq, *m, sizeof(void*), &received_prio);
     }
     else {
         timespec_add_msec(&deadline, &before_call, timeout);    //compute deadline
-        received_size = mq_timedreceive(*b, m, sizeof(void*), &received_prio, &deadline);
+        received_size = mq_timedreceive(b->mq, *m, sizeof(void*), &received_prio, &deadline);
     }
     clock_gettime(CLOCK_MONOTONIC, &after_call);    //get time after call
 
@@ -451,7 +450,7 @@ uint8_t
 gsm_sys_mbox_putnow(gsm_sys_mbox_t* b, void* m) {
     struct timespec fake_deadline;
     memset(&fake_deadline, 0, sizeof(fake_deadline));
-    return mq_timedsend(*b, m, sizeof(void*), 0, &fake_deadline) == 0 ? 1 : 0;
+    return mq_timedsend(b->mq, m, sizeof(void*), 0, &fake_deadline) == 0 ? 1 : 0;
 }
 
 /**
@@ -465,7 +464,7 @@ gsm_sys_mbox_getnow(gsm_sys_mbox_t* b, void** m) {
     struct timespec fake_deadline;
     unsigned int prio;
     memset(&fake_deadline, 0, sizeof(fake_deadline));
-    return mq_timedreceive(*b, m, sizeof(void*), &prio, &fake_deadline) == -1 ? 0 : 1;
+    return mq_timedreceive(b->mq, *m, sizeof(void*), &prio, &fake_deadline) == -1 ? 0 : 1;
 }
 
 /**
@@ -475,7 +474,7 @@ gsm_sys_mbox_getnow(gsm_sys_mbox_t* b, void** m) {
  */
 uint8_t
 gsm_sys_mbox_isvalid(gsm_sys_mbox_t* b) {
-    return b != NULL && *b != GSM_SYS_MBOX_NULL;
+    return b != NULL && b->mq != -1;
 }
 
 /**
@@ -485,8 +484,34 @@ gsm_sys_mbox_isvalid(gsm_sys_mbox_t* b) {
  */
 uint8_t
 gsm_sys_mbox_invalid(gsm_sys_mbox_t* b) {
-    *b = GSM_SYS_MBOX_NULL;
+    b->mq = -1;
     return 1;
+}
+
+
+typedef struct thread_wrapper
+{
+    gsm_sys_thread_fn func;
+    void* args;
+    gsm_sys_sem_t start_flag;   //the semaphore is used to indicate that the new thread has retrieve all usefull informations from its arg so the structure can be destroyed
+} thread_wrapper_t;
+
+/**
+ * \brief           Function wrapper to create posix threads
+ * \param[in]       args = pointer to thread_wrapper_t
+ * \return          NULL
+ * \note            posix thread function must have the following signature : void*(void*)
+ * \note            whereas gsm_sys_thread_fn has the following signture : void(void*)
+ */
+static void*
+thread_func_wrapper(void* args)
+{
+    thread_wrapper_t* th_wrapper = (thread_wrapper_t*)args; //cast
+    gsm_sys_thread_fn thread_func = th_wrapper->func;   //copy useful informations
+    void* thread_args = th_wrapper->args;    //copy useful informations
+    gsm_sys_sem_release(&th_wrapper->start_flag);  //notify that we did the copy
+    thread_func(thread_args);
+    return NULL;
 }
 
 /**
@@ -504,6 +529,7 @@ uint8_t
 gsm_sys_thread_create(gsm_sys_thread_t* t, const char* name, gsm_sys_thread_fn thread_func,
                           void* const arg, size_t stack_size, gsm_sys_thread_prio_t prio) {
     pthread_attr_t attr;
+    thread_wrapper_t wrapper;
     if(pthread_attr_init(&attr) != 0) {
         return 0;
     }
@@ -520,10 +546,21 @@ gsm_sys_thread_create(gsm_sys_thread_t* t, const char* name, gsm_sys_thread_fn t
         return 0;
     }
 
-    if(pthread_create(t, &attr, thread_func, arg) != 0) {
+    //Create the wrapper for posix thread
+    wrapper.func = thread_func;
+    wrapper.args = arg;
+    if(gsm_sys_sem_create(&wrapper.start_flag, 0) != 1){
         pthread_attr_destroy(&attr);
         return 0;
     }
+
+    if(pthread_create(t, &attr, thread_func_wrapper, &wrapper) != 0) {
+        pthread_attr_destroy(&attr);
+        return 0;
+    }
+    //Now we wait that the new thread has correctly started and recovered informations from args, so we can destroy args
+    gsm_sys_sem_wait(&wrapper.start_flag, 0);
+    gsm_sys_sem_release(&wrapper.start_flag);
 
     pthread_attr_destroy(&attr);
     pthread_setname_np(*t, name);
@@ -541,9 +578,8 @@ gsm_sys_thread_terminate(gsm_sys_thread_t* t) {
     if(t == NULL)
         return 0;
 
-    if(pthread_join(*t, NULL) != 0) {
+    if(pthread_join(*t, NULL) != 0)
         return 0;
-    }
 
     return 1;
 }

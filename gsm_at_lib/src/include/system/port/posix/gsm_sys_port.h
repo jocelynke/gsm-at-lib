@@ -54,7 +54,6 @@ extern "C" {
 #include <pthread.h>
 #include <semaphore.h>
 #include <mqueue.h>
-#include <stdbool.h>
 
 /**
  * \brief           System mutex type
@@ -63,7 +62,7 @@ extern "C" {
  */
 typedef struct mutex_wrapper
 {
-    bool is_valid;
+    uint8_t is_valid;
     pthread_mutex_t mutex;
 } mutex_wrapper_t;
 typedef mutex_wrapper_t         gsm_sys_mutex_t;
@@ -75,7 +74,7 @@ typedef mutex_wrapper_t         gsm_sys_mutex_t;
  */
 typedef struct sem_wrapper
 {
-    bool is_valid;
+    uint8_t is_valid;
     sem_t sem;
 } sem_wrapper_t;
 typedef sem_wrapper_t     gsm_sys_sem_t;
@@ -85,7 +84,12 @@ typedef sem_wrapper_t     gsm_sys_sem_t;
  *
  * It is used by middleware as base type of mutex.
  */
-typedef mqd_t  gsm_sys_mbox_t;
+typedef struct mq_wrapper
+{
+	mqd_t mq;
+	char name[30];
+}mq_wrapper_t;
+typedef mq_wrapper_t  gsm_sys_mbox_t;
 
 /**
  * \brief           System thread ID type
