@@ -566,11 +566,13 @@ typedef uint8_t (*gsm_ll_reset_fn)(uint8_t state);
  * \ingroup         GSM_LL
  * \brief           Low level user specific functions
  */
+#define MAX_DEVICE_NAME 256
 typedef struct {
     gsm_ll_send_fn send_fn;                     /*!< Callback function to transmit data */
     gsm_ll_reset_fn reset_fn;                   /*!< Reset callback function */
     struct {
         uint32_t baudrate;                      /*!< UART baudrate value */
+        char device_name[MAX_DEVICE_NAME];
     } uart;                                     /*!< UART communication parameters */
 } gsm_ll_t;
 

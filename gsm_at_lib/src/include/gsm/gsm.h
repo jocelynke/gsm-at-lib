@@ -60,6 +60,7 @@ gsmr_t      gsm_device_set_present(uint8_t present, const gsm_api_cmd_evt_fn evt
 uint8_t     gsm_device_is_present(void);
 
 uint8_t     gsm_delay(uint32_t ms);
+uint8_t		gsm_set_uart_device_name(const char* name);
 
 /**
  * \}

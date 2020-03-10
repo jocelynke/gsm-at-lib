@@ -332,3 +332,13 @@ gsm_device_is_present(void) {
     gsm_core_unlock();
     return res;
 }
+
+uint8_t gsm_set_uart_device_name(const char* name)
+{
+    size_t len = strnlen(name, MAX_DEVICE_NAME);
+    if(len >= MAX_DEVICE_NAME)
+        return 0;
+    memcpy(gsm.ll.uart.device_name, name, len);
+    gsm.ll.uart.device_name[len] = '\0';
+    return 1;
+}
