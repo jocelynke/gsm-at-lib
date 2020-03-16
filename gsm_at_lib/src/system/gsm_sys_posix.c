@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 static gsm_sys_mutex_t sys_mutex;
 #define NSEC_PER_SEC 1000000000
@@ -534,7 +535,7 @@ gsm_sys_thread_create(gsm_sys_thread_t* t, const char* name, gsm_sys_thread_fn t
         return 0;
     }
 
-    if(stack_size != 0 && pthread_attr_setstacksize(&attr, stack_size) != 0) {
+    if(stack_size != 0 && stack_size > PTHREAD_STACK_MIN && pthread_attr_setstacksize(&attr, stack_size) != 0) {
         pthread_attr_destroy(&attr);
         return 0;
     }
